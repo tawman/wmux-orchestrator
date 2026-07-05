@@ -1,0 +1,3 @@
+# Claude Code local-marketplace runtime lock — per-machine PID state, not source.
+# Written into this repo because it's registered as a `directory` marketplace.
+.in_use/

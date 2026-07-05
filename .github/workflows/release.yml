@@ -1,0 +1,37 @@
+# Fork-local release automation. Lives only on production/local of
+# tawman/wmux-orchestrator. The plugin is source files (no build step), so a
+# release is just: push a v* tag -> create a GitHub Release with auto-generated
+# notes on THIS repo. No binaries, no latest.yml, no auto-update feed.
+#
+# Requires Actions to be enabled on the fork (Settings -> Actions).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to release (e.g. v0.1.1-local.1)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5   # Node 24 runtime — avoids the Node 20 deprecation warning
+        with:
+          fetch-depth: 0   # full history so --generate-notes has a baseline
+
+      - name: Create GitHub Release with generated notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.event_name == 'push' && github.ref_name || github.event.inputs.tag }}"
+          gh release create "$TAG" \
+            --repo "${{ github.repository }}" \
+            --title "wmux-orchestrator $TAG" \
+            --generate-notes
