@@ -5,41 +5,25 @@ Claude Code plugin that decomposes complex dev tasks into parallel agents coordi
 **With wmux**: Each agent gets its own visible terminal pane — watch them work in real-time.
 **Without wmux**: Falls back to native Claude Code subagents.
 
-## Install
+## Local build (production/local)
 
-Add the marketplace, then install the plugin from it:
-
-```bash
-claude plugin marketplace add amirlehmam/wmux-orchestrator
-claude plugin install wmux-orchestrator@wmux-orchestrator
-```
-
-Verify it's enabled with `claude plugin list`. To update later:
+This is **tawman's fork** of [amirlehmam/wmux-orchestrator](https://github.com/amirlehmam/wmux-orchestrator),
+run from the `production/local` branch. We consume the plugin directly from this working tree via a
+Claude Code **local-directory marketplace** (not the upstream GitHub marketplace):
 
 ```bash
+# one-time: register this fork as the wmux-orchestrator marketplace
+claude plugin marketplace add C:\git\wmux-orchestrator-fork
+
+# after pulling new production/local commits, refresh the plugin cache:
 claude plugin marketplace update wmux-orchestrator
-claude plugin update wmux-orchestrator@wmux-orchestrator
 ```
 
-## Usage
+Versioning is `<upstream-base>-local.<N>`, kept in sync across `package.json` and the functional
+`.claude-plugin/plugin.json`; fork releases are cut on `production/local` for release notes — see
+[`docs/LOCAL-RELEASE.md`](docs/LOCAL-RELEASE.md).
 
-In Claude Code:
-```
-/wmux-orchestrator:orchestrate <your task description>
-```
-
-## How it works
-
-1. Analyzes your codebase structure
-2. Decomposes the task into waves of parallel agents
-3. Spawns agents (wmux panes or subagents)
-4. Monitors progress and drives wave transitions
-5. Runs automated review when all agents complete
-
-## Requirements
-
-- Claude Code CLI
-- wmux (optional, for visual multi-pane mode)
+**📖 For install, usage, how-it-works, and requirements, see the [upstream wmux-orchestrator README](https://github.com/amirlehmam/wmux-orchestrator/blob/master/README.md).**
 
 ## License
 
