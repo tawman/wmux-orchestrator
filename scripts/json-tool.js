@@ -9,6 +9,7 @@
 //   node json-tool.js query <file> <query-name> [args...]
 //   node json-tool.js update-agent <file> <agentId> <field=value>...
 //   node json-tool.js dashboard <file>
+//   node json-tool.js reconcile <file> <orch-dir> [nowIso]
 //   node json-tool.js parse-json <jsonString> <path>
 
 'use strict';
@@ -127,6 +128,20 @@ function findAgent(data, agentId) {
   return null;
 }
 
+/**
+ * True once an agent has reached a terminal state. Tolerates both status
+ * vocabularies in play: the design/hook path writes `completed`, while the
+ * runtime signal (`wmux agent list`) and the wmux cockpit use `exited`.
+ */
+function isAgentDone(agent) {
+  return !!agent && (agent.status === 'exited' || agent.status === 'completed' || agent.status === 'failed');
+}
+
+/** True when an agent finished unsuccessfully (explicit fail, or non-zero exit). */
+function isAgentFailed(agent) {
+  return !!agent && (agent.status === 'failed' || (agent.status === 'exited' && (agent.exitCode || 0) !== 0));
+}
+
 // ── Commands ─────────────────────────────────────────────────────────────────
 
 function cmdGet(file, dotPath) {
@@ -205,7 +220,7 @@ function cmdQuery(file, queryName, ...args) {
         break;
       }
       const agents = data.waves[waveIdx].agents || [];
-      const allDone = agents.every(a => a.status === 'completed' || a.status === 'failed');
+      const allDone = agents.every(isAgentDone);
       process.stdout.write(allDone ? 'true' : 'false');
       process.stdout.write('\n');
       break;
@@ -329,9 +344,9 @@ function cmdDashboard(file) {
   for (const wave of waves) {
     for (const agent of (wave.agents || [])) {
       totalAgents++;
-      if (agent.status === 'completed') completedAgents++;
+      if (isAgentFailed(agent)) failedAgents++;
+      else if (agent.status === 'completed' || agent.status === 'exited') completedAgents++;
       else if (agent.status === 'running') runningAgents++;
-      else if (agent.status === 'failed') failedAgents++;
     }
   }
 
@@ -361,6 +376,64 @@ function cmdDashboard(file) {
   lines.push(`## Reviewer — ${reviewerStatus}`);
 
   process.stdout.write(lines.join('\n') + '\n');
+}
+
+/**
+ * Reconcile completion into state.json. In wmux mode agents are independent
+ * interactive processes, so the SubagentStop hook never fires to mark them done and
+ * per-agent status is otherwise stuck at "running" (stale cockpit/dashboard). This
+ * advances any running agent whose result file has landed, then rolls wave and run
+ * status up. Idempotent — safe to call on every monitoring poll.
+ *
+ * Writes the vocabulary the wmux cockpit + dashboard-text.js read: agent `exited`
+ * (exitCode 0), wave/run `complete` (or `failed`).
+ */
+function cmdReconcile(file, orchDir, nowIso) {
+  const data = readJSON(file);
+  const now = nowIso || new Date().toISOString();
+  let changed = false;
+
+  // 1. Advance running agents whose result file has landed (the reliable done signal —
+  //    interactive agents idle in their pane after finishing, so process exit is not it).
+  for (const wave of (data.waves || [])) {
+    for (const agent of (wave.agents || [])) {
+      if (isAgentDone(agent)) continue;
+      const rf = path.join(orchDir, `agent-${agent.id}-result.md`);
+      let landed = false;
+      try { landed = fs.statSync(rf).size > 0; } catch { landed = false; }
+      if (landed) {
+        agent.status = 'exited';
+        if (agent.exitCode == null) agent.exitCode = 0;
+        if (!agent.finishedAt) agent.finishedAt = now;
+        changed = true;
+      }
+    }
+  }
+
+  // 2. Roll each wave up from its agents (cockpit vocab: complete/failed/running/pending).
+  for (const wave of (data.waves || [])) {
+    const agents = wave.agents || [];
+    if (agents.length === 0) continue;
+    const allDone = agents.every(isAgentDone);
+    const anyFailed = agents.some(isAgentFailed);
+    const anyStarted = agents.some(a => a.status === 'running' || isAgentDone(a));
+    let ws;
+    if (allDone) ws = anyFailed ? 'failed' : 'complete';
+    else if (anyStarted) ws = 'running';
+    else ws = 'pending';
+    if (wave.status !== ws) { wave.status = ws; changed = true; }
+  }
+
+  // 3. Roll the run up once every wave is terminal, so the cockpit shows completion
+  //    (and the app watcher enters its linger-then-clear path) instead of "running" forever.
+  const waves = data.waves || [];
+  if (waves.length > 0 && waves.every(w => w.status === 'complete' || w.status === 'failed')) {
+    const rs = waves.some(w => w.status === 'failed') ? 'failed' : 'complete';
+    if (data.status !== rs) { data.status = rs; changed = true; }
+  }
+
+  if (changed) writeJSON(file, data);
+  process.stdout.write((changed ? 'changed' : 'nochange') + '\n');
 }
 
 /**
@@ -425,6 +498,11 @@ switch (cmd) {
   case 'dashboard':
     if (args.length < 2) { process.stderr.write('Usage: node json-tool.js dashboard <file>\n'); process.exit(1); }
     cmdDashboard(args[1]);
+    break;
+
+  case 'reconcile':
+    if (args.length < 3) { process.stderr.write('Usage: node json-tool.js reconcile <file> <orch-dir> [nowIso]\n'); process.exit(1); }
+    cmdReconcile(args[1], args[2], args[3]);
     break;
 
   case 'parse-json':

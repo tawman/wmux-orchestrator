@@ -378,7 +378,11 @@ Spawn each agent using Claude Code's native Agent tool:
 
 Before entering the loop, note how the user sees progress:
 
-- **In wmux mode**: wmux's sidebar automatically watches `{TMPDIR}/wmux-orch-*/state.json` and renders a live cockpit (task, elapsed time, per-wave progress bars, per-agent state dots, tool counts). You don't need to do anything to keep it updated — the hooks already update state.json on tool-use and wave transitions, and the sidebar polls every second. Do NOT call the dashboard manually in wmux mode; it would be redundant and noisy.
+- **In wmux mode**: wmux's sidebar automatically watches `{TMPDIR}/wmux-orch-*/state.json` and renders a live cockpit (task, elapsed time, per-wave progress bars, per-agent state dots, tool counts), polling every second. Tool-use activity stays fresh via the PostToolUse hook — but **agent completion does not update on its own**: agents spawned via `wmux agent spawn` are independent interactive processes, so the SubagentStop hook never fires for them and nothing advances their status past `running`. To keep the cockpit live, run the reconciler each time you poll — it reads the agents' result files and rolls their status up into state.json:
+  ```bash
+  bash "$PLUGIN_ROOT/scripts/sync-status.sh" "[orch-dir]"
+  ```
+  It is idempotent and cheap, so call it on every poll. You do not need to push the markdown dashboard manually in wmux mode — the sidebar renders state.json directly.
 
 - **In degraded mode (no wmux)**: you must print the text dashboard into Claude Code's conversation at each wave transition so the user can see progress. Run:
   ```bash
@@ -391,12 +395,15 @@ Before entering the loop, note how the user sees progress:
 After spawning Wave N agents, enter a monitoring loop. Poll every 15-20 seconds:
 
 ```bash
+bash "$PLUGIN_ROOT/scripts/sync-status.sh" "[orch-dir]"   # keep state.json / cockpit live
 wmux agent list
 ```
 
 For each agent, check the `"status"` field:
 - `"running"` → agent is still working
 - `"exited"` → agent has finished (check `"exitCode"`: 0 = success, non-zero = failure)
+
+Note: agents run interactively and usually keep their pane open after finishing, so `wmux agent list` can keep reporting `running` even when an agent is done. The reliable "done" signal is the agent's result file appearing (`[orch-dir]/agent-[id]-result.md`) — that is what `sync-status.sh` keys on, and what you should treat as authoritative for wave transitions.
 
 **While agents are running, report status to the user:**
 - Tell the user which agents are still working and which have finished
