@@ -494,9 +494,10 @@ over many rapid updates.)
    [orch-dir]/agent-[id]-result.md
    ```
 2. Report results to the user: which agents succeeded, which failed, what they produced
-3. Mark the wave `complete` in state.json (see above), then **reap the idle agent TUIs**:
-   `wmux agent kill <agentId>` for each finished agent (ids from `wmux agent list`), and close their
-   panes (`wmux close-pane <paneId>`) so the next wave starts from a clean layout.
+3. Mark the wave `complete` in state.json (see above), then **reap the idle agent TUIs — in this
+   order: `wmux agent kill <agentId>` FIRST, `wmux close-pane <paneId>` second** (see Phase 9 for
+   why the order matters), for each finished agent (ids from `wmux agent list`), so the next wave
+   starts from a clean layout.
    ⚠ `agent kill` does NOT kill processes the agent started (dev servers, watchers) — if agents
    launched servers, sweep the project's ports for orphaned listeners before starting new ones.
 4. If there are more waves:
@@ -534,6 +535,8 @@ bash "$PLUGIN_ROOT/scripts/collect-results.sh" "[orch-dir]"
 2. Invoke the reviewer skill to analyze all changes and produce a final report.
 
 ## Phase 9: Finalize
+
+**Teardown order matters: `wmux agent kill <agentId>` BEFORE `wmux close-pane <paneId>` — for every agent, every time.** Closing an agent's pane first leaves the agent registry stale: `wmux agent list` keeps reporting the agent as `running`, but `wmux agent kill <id>` then fails with "Agent not found" — and the agent's launcher process tree (shell → node → claude) SURVIVES the pane close, invisibly burning CPU and tokens. If that happens, recover by taking the `pid` from `wmux agent list` and killing the process TREE (Windows: `taskkill /F /T /PID <pid>`); judge liveness by the process, not the registry status. And per Phase 7: only kill agents this orchestration spawned.
 
 After the reviewer completes, present a summary:
 - Total time elapsed
