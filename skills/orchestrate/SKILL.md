@@ -436,7 +436,7 @@ Before entering the loop, note how the user sees progress:
   ```bash
   bash "$PLUGIN_ROOT/scripts/sync-status.sh" "[orch-dir]"
   ```
-  Do NOT call the text dashboard manually in wmux mode; it would be redundant and noisy.
+  Do NOT call the text dashboard manually in wmux mode; it would be redundant and noisy. When the reconciler rolls the run up to `complete`, it also stamps the workspace's sidebar row to **"Done: orchestration complete — awaiting review"** (green) via `wmux set-status --workspace <id>` — so the workspace stops reading "Running" and signals that the run awaits your review. This is automatic and fires once; you don't need to set it yourself. (Requires the wmux fork's `set-status --workspace` verb, ≥ 0.19.0-local.1; older apps no-op it. The auto-heal separately clears a stuck "Running" whenever an agent's pane/PTY is torn down.)
 
 - **In degraded mode (no wmux)**: you must print the text dashboard into Claude Code's conversation at each wave transition so the user can see progress. Run:
   ```bash
